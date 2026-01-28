@@ -22,6 +22,10 @@ export class SceneManager {
   private isSimulating: boolean = false;
   private resizeObserver: ResizeObserver;
   private gltfLoader: GLTFLoader;
+  private pointerDownHandler: (event: PointerEvent) => void;
+  private keyDownHandler: (event: KeyboardEvent) => void;
+  private keyUpHandler: (event: KeyboardEvent) => void;
+  private fpsClickHandler: () => void;
 
   // FPS Movement State
   private moveForward = false;
@@ -43,6 +47,38 @@ export class SceneManager {
     this.onTransformChange = onTransformChange;
     this.objectsMap = new Map();
     this.gltfLoader = new GLTFLoader();
+    this.pointerDownHandler = (event: PointerEvent) => this.onPointerDown(event);
+    this.keyDownHandler = (event: KeyboardEvent) => {
+        if (!this.isFPSMode) return;
+        switch (event.code) {
+            case 'ArrowUp':
+            case 'KeyW': this.moveForward = true; break;
+            case 'ArrowLeft':
+            case 'KeyA': this.moveLeft = true; break;
+            case 'ArrowDown':
+            case 'KeyS': this.moveBackward = true; break;
+            case 'ArrowRight':
+            case 'KeyD': this.moveRight = true; break;
+        }
+    };
+    this.keyUpHandler = (event: KeyboardEvent) => {
+        if (!this.isFPSMode) return;
+        switch (event.code) {
+            case 'ArrowUp':
+            case 'KeyW': this.moveForward = false; break;
+            case 'ArrowLeft':
+            case 'KeyA': this.moveLeft = false; break;
+            case 'ArrowDown':
+            case 'KeyS': this.moveBackward = false; break;
+            case 'ArrowRight':
+            case 'KeyD': this.moveRight = false; break;
+        }
+    };
+    this.fpsClickHandler = () => {
+        if (this.isFPSMode && !this.fpsControls.isLocked) {
+            this.fpsControls.lock();
+        }
+    };
 
     // Scene setup
     this.scene = new THREE.Scene();
@@ -68,6 +104,7 @@ export class SceneManager {
 
     // Renderer
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    this.renderer.setPixelRatio(this.getPixelRatio());
     this.renderer.setSize(width, height);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -122,43 +159,15 @@ export class SceneManager {
   }
 
   private setupEventListeners() {
-    this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown.bind(this));
+    this.renderer.domElement.addEventListener('pointerdown', this.pointerDownHandler);
     
     // FPS Keys
-    document.addEventListener('keydown', (event) => {
-        if (!this.isFPSMode) return;
-        switch (event.code) {
-            case 'ArrowUp':
-            case 'KeyW': this.moveForward = true; break;
-            case 'ArrowLeft':
-            case 'KeyA': this.moveLeft = true; break;
-            case 'ArrowDown':
-            case 'KeyS': this.moveBackward = true; break;
-            case 'ArrowRight':
-            case 'KeyD': this.moveRight = true; break;
-        }
-    });
+    document.addEventListener('keydown', this.keyDownHandler);
 
-    document.addEventListener('keyup', (event) => {
-        if (!this.isFPSMode) return;
-        switch (event.code) {
-            case 'ArrowUp':
-            case 'KeyW': this.moveForward = false; break;
-            case 'ArrowLeft':
-            case 'KeyA': this.moveLeft = false; break;
-            case 'ArrowDown':
-            case 'KeyS': this.moveBackward = false; break;
-            case 'ArrowRight':
-            case 'KeyD': this.moveRight = false; break;
-        }
-    });
+    document.addEventListener('keyup', this.keyUpHandler);
     
     // Lock pointer on click if simulation is running and we are in FPS mode
-    this.renderer.domElement.addEventListener('click', () => {
-        if (this.isFPSMode && !this.fpsControls.isLocked) {
-            this.fpsControls.lock();
-        }
-    });
+    this.renderer.domElement.addEventListener('click', this.fpsClickHandler);
   }
 
   private onPointerDown(event: PointerEvent) {
@@ -308,6 +317,7 @@ export class SceneManager {
     if (width === 0 || height === 0) return;
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    this.renderer.setPixelRatio(this.getPixelRatio());
     this.renderer.setSize(width, height);
   }
 
@@ -438,7 +448,11 @@ export class SceneManager {
 
   private setupObject(object: THREE.Object3D, objData: SceneObject) {
     object.position.set(...objData.position);
-    object.rotation.set(...objData.rotation);
+    object.rotation.set(
+        THREE.MathUtils.degToRad(objData.rotation[0]),
+        THREE.MathUtils.degToRad(objData.rotation[1]),
+        THREE.MathUtils.degToRad(objData.rotation[2])
+    );
     object.scale.set(...objData.scale);
     object.visible = objData.visible;
     object.userData = { id: objData.id, type: objData.type }; // Store type to find camera later
@@ -556,6 +570,10 @@ export class SceneManager {
   public dispose() {
     this.resizeObserver.disconnect();
     if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+    this.renderer.domElement.removeEventListener('pointerdown', this.pointerDownHandler);
+    this.renderer.domElement.removeEventListener('click', this.fpsClickHandler);
+    document.removeEventListener('keydown', this.keyDownHandler);
+    document.removeEventListener('keyup', this.keyUpHandler);
     this.transformControls.dispose();
     this.controls.dispose();
     this.fpsControls.dispose(); // Dispose FPS controls
@@ -573,5 +591,11 @@ export class SceneManager {
         bytes[i] = binaryString.charCodeAt(i);
     }
     return bytes.buffer;
+  }
+
+  private getPixelRatio() {
+    const ratio = window.devicePixelRatio || 1;
+    const isMobile = window.matchMedia?.('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+    return isMobile ? Math.min(ratio, 2) : ratio;
   }
 }

@@ -1,0 +1,5 @@
+{
+  "name": "VoxelVerse 3D Editor",
+  "description": "A web-based 3D scene editor with visual programming capabilities using Three.js and Blockly.",
+  "requestFramePermissions": []
+}
